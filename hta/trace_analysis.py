@@ -14,6 +14,7 @@ from hta.analyzers.cuda_kernel_analysis import CudaKernelAnalysis
 from hta.analyzers.cupti_counter_analysis import CuptiCounterAnalysis
 from hta.analyzers.straggler import find_stragglers_with_late_start_comm_kernels
 from hta.analyzers.straggler_analysis import StragglerAnalysis
+from hta.analyzers.operator_count_analysis import OperatorCountAnalysis
 from hta.analyzers.trace_counters import TraceCounters
 from hta.common.constants import CUDA_MAX_LAUNCH_QUEUE_PER_STREAM
 from hta.common.trace import Trace
@@ -763,4 +764,107 @@ class TraceAnalysis:
             output_dir,
             only_show_critical_events,
             show_all_edges,
+        )
+
+    def get_operator_counts(
+        self,
+        ranks: Optional[List[int]] = None,
+        by_iteration: bool = False,
+    ) -> pd.DataFrame:
+        r"""
+        Count the number of CPU operators and GPU kernels for the specified ranks.
+
+        This function computes the total count and unique count of CPU operators and GPU kernels.
+        Optionally, the counts can be broken down by iteration (profiler step).
+
+        Args:
+            ranks (List[int], optional): List of ranks to analyze. If None, all available ranks are used.
+            by_iteration (bool): If True, counts are broken down by iteration (profiler step).
+                Default = False.
+
+        Returns:
+            pd.DataFrame: A DataFrame with the following columns:
+
+                - rank: the rank number
+                - iteration (if by_iteration=True): the profiler step number
+                - cpu_operator_count: total number of CPU operator events
+                - cpu_unique_operator_count: number of unique CPU operator types
+                - gpu_kernel_count: total number of GPU kernel events
+                - gpu_unique_kernel_count: number of unique GPU kernel types
+
+        Example:
+            >>> analyzer = TraceAnalysis(trace_dir="path/to/traces")
+            >>> counts = analyzer.get_operator_counts()
+            >>> print(counts)
+               rank  cpu_operator_count  cpu_unique_operator_count  gpu_kernel_count  gpu_unique_kernel_count
+            0     0                1234                        56              5678                       89
+            >>> # Break down by iteration
+            >>> counts_by_iter = analyzer.get_operator_counts(by_iteration=True)
+        """
+        return OperatorCountAnalysis.get_operator_counts(
+            self.t, ranks=ranks, by_iteration=by_iteration
+        )
+
+    def get_operator_count_summary(
+        self,
+        ranks: Optional[List[int]] = None,
+    ) -> pd.DataFrame:
+        r"""
+        Get a summary of operator counts across all specified ranks.
+
+        Returns min, max, mean, standard deviation, and total for each count metric
+        across ranks.
+
+        Args:
+            ranks (List[int], optional): List of ranks to analyze. If None, all available ranks are used.
+
+        Returns:
+            pd.DataFrame: A summary DataFrame with columns:
+
+                - cpu_operator_count_min, _max, _mean, _std, _total
+                - cpu_unique_operator_count_min, _max, _mean, _std, _total
+                - gpu_kernel_count_min, _max, _mean, _std, _total
+                - gpu_unique_kernel_count_min, _max, _mean, _std, _total
+
+        Example:
+            >>> analyzer = TraceAnalysis(trace_dir="path/to/traces")
+            >>> summary = analyzer.get_operator_count_summary()
+            >>> print(summary)
+        """
+        return OperatorCountAnalysis.get_operator_count_summary(
+            self.t, ranks=ranks
+        )
+
+    def get_unique_operator_names(
+        self,
+        rank: int = 0,
+        device: str = "both",
+    ) -> pd.DataFrame:
+        r"""
+        Get the set of unique operator/kernel names for a given rank, along with
+        their occurrence count and duration statistics.
+
+        Args:
+            rank (int): The rank to analyze. Default = 0.
+            device (str): Which device types to include.
+                - "cpu": only CPU operators
+                - "gpu": only GPU kernels
+                - "both": both CPU and GPU (default)
+
+        Returns:
+            pd.DataFrame: A DataFrame with columns:
+
+                - name: the operator/kernel name
+                - device: "CPU" or "GPU"
+                - count: number of occurrences
+                - total_duration_us: total duration in microseconds
+                - mean_duration_us: mean duration in microseconds
+
+        Example:
+            >>> analyzer = TraceAnalysis(trace_dir="path/to/traces")
+            >>> unique_ops = analyzer.get_unique_operator_names(rank=0, device="gpu")
+            >>> print(unique_ops.head(10))
+        """
+        return OperatorCountAnalysis.get_unique_operator_names(
+            self.t, rank=rank, device=device
         )
