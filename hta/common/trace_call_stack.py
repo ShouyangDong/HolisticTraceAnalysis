@@ -24,7 +24,10 @@ CLOSE_END = 1
 
 
 def _cmp_events_with_zero_duration(x: np.ndarray, y: np.ndarray) -> bool:
-    """Compare two events which at least one of them has zero duration
+    """Compare two events which at least one of them has zero or negative duration.
+
+    Negative durations (e.g., dur = -1.0) represent instantaneous/point events
+    and are treated the same as zero-duration events for ordering purposes.
 
     Args:
         x (np.ndarray): An array with 4 elements (index, dur, kind, ts)
@@ -39,12 +42,12 @@ def _cmp_events_with_zero_duration(x: np.ndarray, y: np.ndarray) -> bool:
     result: bool = True
 
     if (
-        x[_I_DUR] == 0 and y[_I_DUR] > 0
-    ):  # a zero event is enclosed in a non-zero events.
+        x[_I_DUR] <= 0 and y[_I_DUR] > 0
+    ):  # a zero/negative event is enclosed in a non-zero events.
         result = y[_I_KIND] == CLOSE_END
-    elif x[_I_DUR] > 0 and y[_I_DUR] == 0:
+    elif x[_I_DUR] > 0 and y[_I_DUR] <= 0:
         result = x[_I_KIND] == OPEN_END
-    elif x[_I_DUR] == 0 and y[_I_DUR] == 0:  # two zero events
+    elif x[_I_DUR] <= 0 and y[_I_DUR] <= 0:  # two zero/negative events
         if x[_I_KIND] == OPEN_END and y[_I_KIND] == OPEN_END:  # both are open ends
             result = x[_I_INDEX] < y[_I_INDEX]
         elif x[_I_KIND] == CLOSE_END and y[_I_KIND] == CLOSE_END:  # both are close ends
@@ -70,7 +73,7 @@ def _less_than(x: np.ndarray, y: np.ndarray) -> bool:
     if x[_I_INDEX] == y[_I_INDEX]:
         return x[_I_KIND] == OPEN_END
 
-    if x[_I_DUR] == 0 or y[_I_DUR] == 0:
+    if x[_I_DUR] <= 0 or y[_I_DUR] <= 0:
         return _cmp_events_with_zero_duration(x, y)
 
     if x[_I_KIND] == CLOSE_END and y[_I_KIND] == OPEN_END:  # x is closing, y is opening
