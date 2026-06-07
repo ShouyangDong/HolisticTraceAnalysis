@@ -559,10 +559,15 @@ class CudaKernelAnalysis:
 
             # filter out events which have correlation value matching to
             # cudaLaunchKernel, cudaLaunchKernelExC, cudaMemcpyAsync, cudaMemsetAsync
+            # and their MLU counterparts
             cuda_launch_kernel_id = sym_index.get("cudaLaunchKernel", None)
             cuda_launch_kernel_ex_c_id = sym_index.get("cudaLaunchKernelExC", None)
             cuda_memcpy_async_id = sym_index.get("cudaMemcpyAsync", None)
             cuda_memset_async_id = sym_index.get("cudaMemsetAsync", None)
+            mlu_launch_kernel_id = sym_index.get("mluLaunchKernel", None)
+            mlu_launch_kernel_ex_c_id = sym_index.get("mluLaunchKernelExC", None)
+            mlu_memcpy_async_id = sym_index.get("mluMemcpyAsync", None)
+            mlu_memset_async_id = sym_index.get("mluMemsetAsync", None)
             mtia_launch_kernel_id = sym_index.get(
                 "runFunction - job_prep_and_submit_for_execution", None
             )
@@ -571,6 +576,8 @@ class CudaKernelAnalysis:
             launch_ids = [
                 cuda_launch_kernel_id,
                 cuda_launch_kernel_ex_c_id,
+                mlu_launch_kernel_id,
+                mlu_launch_kernel_ex_c_id,
                 mtia_launch_kernel_id,
             ]
             cuda_launch_kernel_correlation_series: pd.Series = trace_df[
@@ -579,10 +586,13 @@ class CudaKernelAnalysis:
 
             # whether to use memory events - cudaMemsetAsync and cudaMemcpyAsync.
             if include_memory_events:
+                memory_event_ids = [
+                    i for i in [cuda_memset_async_id, cuda_memcpy_async_id,
+                                mlu_memset_async_id, mlu_memcpy_async_id] if i is not None
+                ]
                 memory_event_correlation_series: pd.Series = trace_df[
-                    (trace_df["name"] == cuda_memset_async_id)
-                    | (trace_df["name"] == cuda_memcpy_async_id)
-                ].correlation
+                    trace_df["name"].isin(memory_event_ids)
+                ].correlation        
                 merged_series: pd.Series = pd.concat(
                     [
                         cuda_launch_kernel_correlation_series,
