@@ -624,5 +624,133 @@ class TraceAnalysisTestCase(unittest.TestCase):
             )
 
 
+    def test_get_operator_counts_vision_transformer(self):
+        """Test operator counts on vision transformer trace (multi-rank)."""
+        counts = self.vision_transformer_t.get_operator_counts()
+        self.assertFalse(counts.empty)
+        self.assertEqual(len(counts), 8)  # 8 ranks
+
+        # Check required columns
+        expected_cols = {
+            "rank",
+            "cpu_operator_count",
+            "cpu_unique_operator_count",
+            "gpu_kernel_count",
+            "gpu_unique_kernel_count",
+        }
+        self.assertTrue(expected_cols.issubset(set(counts.columns)))
+
+        # All counts should be positive
+        for col in expected_cols - {"rank"}:
+            self.assertTrue((counts[col] > 0).all(), f"Column {col} has non-positive values")
+
+        # Unique counts should be <= total counts
+        self.assertTrue(
+            (counts["cpu_unique_operator_count"] <= counts["cpu_operator_count"]).all()
+        )
+        self.assertTrue(
+            (counts["gpu_unique_kernel_count"] <= counts["gpu_kernel_count"]).all()
+        )
+
+    def test_get_operator_counts_inference(self):
+        """Test operator counts on inference trace (single rank)."""
+        counts = self.inference_t.get_operator_counts()
+        self.assertFalse(counts.empty)
+        self.assertEqual(len(counts), 1)  # single rank
+
+        row = counts.iloc[0]
+        self.assertEqual(row["rank"], 0)
+        self.assertGreater(row["cpu_operator_count"], 0)
+        self.assertGreater(row["cpu_unique_operator_count"], 0)
+        self.assertGreater(row["gpu_kernel_count"], 0)
+        self.assertGreater(row["gpu_unique_kernel_count"], 0)
+
+    def test_get_operator_counts_by_iteration(self):
+        """Test operator counts broken down by iteration."""
+        counts = self.vision_transformer_t.get_operator_counts(by_iteration=True)
+        self.assertFalse(counts.empty)
+
+        # Should have iteration column
+        self.assertIn("iteration", counts.columns)
+
+        # Should have multiple iterations for vision transformer
+        iterations = counts["iteration"].unique()
+        self.assertGreater(len(iterations), 1)
+
+        # Counts should be consistent: sum across iterations ~= total
+        total_counts = self.vision_transformer_t.get_operator_counts()
+        for rank in counts["rank"].unique():
+            rank_iter_sum = counts[counts["rank"] == rank]["cpu_operator_count"].sum()
+            rank_total = total_counts[total_counts["rank"] == rank][
+                "cpu_operator_count"
+            ].values[0]
+            self.assertAlmostEqual(rank_iter_sum, rank_total, delta=50)
+
+    def test_get_operator_counts_specific_ranks(self):
+        """Test operator counts for specific ranks."""
+        counts = self.vision_transformer_t.get_operator_counts(ranks=[0, 1])
+        self.assertEqual(len(counts), 2)
+        self.assertEqual(set(counts["rank"].unique()), {0, 1})
+
+    def test_get_operator_count_summary(self):
+        """Test operator count summary across ranks."""
+        summary = self.vision_transformer_t.get_operator_count_summary()
+        self.assertFalse(summary.empty)
+
+        expected_metrics = [
+            "cpu_operator_count",
+            "cpu_unique_operator_count",
+            "gpu_kernel_count",
+            "gpu_unique_kernel_count",
+        ]
+        for metric in expected_metrics:
+            self.assertIn(f"{metric}_min", summary.columns)
+            self.assertIn(f"{metric}_max", summary.columns)
+            self.assertIn(f"{metric}_mean", summary.columns)
+            self.assertIn(f"{metric}_total", summary.columns)
+
+        # total should be >= max
+        for metric in expected_metrics:
+            self.assertGreaterEqual(
+                summary[f"{metric}_total"].values[0],
+                summary[f"{metric}_max"].values[0],
+            )
+
+    def test_get_unique_operator_names_cpu(self):
+        """Test getting unique CPU operator names."""
+        unique_ops = self.vision_transformer_t.get_unique_operator_names(
+            rank=0, device="cpu"
+        )
+        self.assertFalse(unique_ops.empty)
+        self.assertIn("name", unique_ops.columns)
+        self.assertIn("device", unique_ops.columns)
+        self.assertIn("count", unique_ops.columns)
+        self.assertIn("total_duration_us", unique_ops.columns)
+        self.assertIn("mean_duration_us", unique_ops.columns)
+
+        # All should be CPU
+        self.assertTrue((unique_ops["device"] == "CPU").all())
+        # Should be sorted by count descending
+        self.assertTrue(unique_ops["count"].is_monotonic_decreasing)
+
+    def test_get_unique_operator_names_gpu(self):
+        """Test getting unique GPU kernel names."""
+        unique_ops = self.vision_transformer_t.get_unique_operator_names(
+            rank=0, device="gpu"
+        )
+        self.assertFalse(unique_ops.empty)
+        self.assertTrue((unique_ops["device"] == "GPU").all())
+        self.assertTrue(unique_ops["count"].is_monotonic_decreasing)
+
+    def test_get_unique_operator_names_both(self):
+        """Test getting unique operator names for both CPU and GPU."""
+        unique_ops = self.inference_t.get_unique_operator_names(
+            rank=0, device="both"
+        )
+        self.assertFalse(unique_ops.empty)
+        devices = set(unique_ops["device"].unique())
+        self.assertTrue({"CPU", "GPU"}.issubset(devices) or devices == {"CPU", "GPU"})
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
